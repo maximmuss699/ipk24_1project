@@ -329,6 +329,7 @@ void udp_client(char* server_ip, int server_port) {
                 message[strcspn(message, "\n")] = 0;
                 // Use server_addr for sending as it contains the correct server address and port
                 sendto(sock, message, strlen(message), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+
             }
         } else if (ret == 0) {
             printf("No response from server (timeout).\n");
