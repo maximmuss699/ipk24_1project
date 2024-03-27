@@ -91,69 +91,84 @@ void parse_arguments(int argc, char* argv[]) {
     }
 }
 
-void handle_auth(int sock, char* message) {
-
+void handle_auth(int sock, const char* message) {
     char username[MAX_USERNAME_LENGTH + 1];
     char secret[MAX_SECRET_LENGTH + 1];
     char displayName[MAX_DISPLAY_NAME_LENGTH + 1];
 
 
     int argsFilled = sscanf(message, "/auth %20s %128s %20s", username, secret, displayName);
-
-
     if (argsFilled != 3) {
-        printf("ERR: AUTH %s\n", message);
+        printf("Error: Incorrect AUTH command format.\n");
         return;
     }
+
 
     strncpy(globalDisplayName, displayName, MAX_DISPLAY_NAME_LENGTH);
     globalDisplayName[MAX_DISPLAY_NAME_LENGTH] = '\0';
 
-    printf("Your name: %s\n", displayName);
 
-    send(sock, message, strlen(message), 0);
+    char auth_message[BUFFER_SIZE];
+    snprintf(auth_message, BUFFER_SIZE, "AUTH %s AS %s USING %s\r", username, displayName, secret);
 
+
+    if (send(sock, auth_message, strlen(auth_message), 0) < 0) {
+        perror("Error sending AUTH message");
+    }
+
+    printf("Sent AUTH message for user: %s", displayName);
 }
 
+
 void handle_join(int sock, char* message) {
-    // Send JOIN command to the server
     char channelID[MAX_CHANNEL_ID_LENGTH + 1];
+
+    // Попытка извлечь аргумент из введённой строки
     if (sscanf(message, "/join %20s", channelID) != 1) {
         printf("ERR: JOIN %s\n", message);
         return;
     }
 
-    send(sock, message, strlen(message), 0);
+    // Формируем сообщение согласно протоколу
+    char join_message[BUFFER_SIZE];
+    snprintf(join_message, BUFFER_SIZE, "JOIN %s AS %s\r", channelID, globalDisplayName);
+
+    // Отправляем сформированное сообщение на сервер
+    send(sock, join_message, strlen(join_message), 0);
+
+    printf("Sent JOIN message: %s", join_message);
 }
 
-void handle_rename(int sock, char* message) {
 
-    // Send RENAME command to the server
-    char displayName[MAX_DISPLAY_NAME_LENGTH + 1];
-    if (sscanf(message, "/rename %20s", displayName) != 1) {
-        printf("ERR: RENAME %s\n", message);
+void handle_rename(int sock, char* message) {
+    char newDisplayName[MAX_DISPLAY_NAME_LENGTH + 1];
+    if (sscanf(message, "/rename %20s", newDisplayName) != 1) {
+        printf("ERR: RENAME %s", message);
         return;
     }
-    strncpy(globalDisplayName, displayName, MAX_DISPLAY_NAME_LENGTH);
+    // Copy the new display name to the global variable
+    strncpy(globalDisplayName, newDisplayName, MAX_DISPLAY_NAME_LENGTH);
     globalDisplayName[MAX_DISPLAY_NAME_LENGTH] = '\0';
-    printf("New DisplayName: %s\n", displayName);
 
-    send(sock, message, strlen(message), 0);
+    printf("Your new Name: %s", newDisplayName);
 }
 
 void handle_bye(int sock, char* message) {
     const char* byeMessage = "BYE\r\n";
     send(sock, byeMessage, strlen(byeMessage), 0);
-    printf("Disconnecting from server.\n");
+    printf("Disconnecting from server.");
     close(sock);
     exit(0);
 }
 
-void handle_msg(int sock, char* message) {
-    // Send message to the server
-    printf("%s: %s\n", globalDisplayName, message);
+void handle_msg(int sock, const char* userMessage) {
+    //
+    char message[BUFFER_SIZE];
+    snprintf(message, BUFFER_SIZE, "MSG FROM %s IS %s\r", globalDisplayName, userMessage);
     send(sock, message, strlen(message), 0);
+    printf("%s: %s\n", globalDisplayName, userMessage);
 }
+
 
 void handle_response(char *response) {
     if (strncmp(response, "OK", 2) == 0) {
