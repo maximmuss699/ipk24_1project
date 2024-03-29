@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <poll.h>
 #include <search.h>
+#include <stdbool.h>
+#include <ctype.h>
 
 
 #define BUFFER_SIZE 1024
@@ -19,6 +21,7 @@
 #define MAX_DISPLAY_NAME_LENGTH 20
 #define MAX_CHANNEL_ID_LENGTH 20
 #define MAX_MESSAGE_ID_SIZE 32
+#define MAX_ATTEMPTS 3
 
 
 // Global configuration
@@ -32,6 +35,56 @@ struct {
 
 char globalDisplayName[MAX_DISPLAY_NAME_LENGTH + 1] = ""; // Display name for the client
 
+// Two possible states for the client
+typedef enum {
+    CLIENT_READY,
+    CLIENT_AWAITING_REPLY
+} ClientState;
+// Initial state is CLIENT_READY
+ClientState client_state = CLIENT_READY;
+
+
+typedef enum {
+    START_STATE,
+    AUTH_STATE,
+    OPEN_STATE,
+    ERROR_STATE,
+    END_STATE
+} State;
+
+
+bool isValidUsername(const char* username) {
+    size_t length = strlen(username);
+    if (length > MAX_USERNAME_LENGTH)
+        return false;
+    for (size_t i = 0; i < length; i++) {
+        if (!isalnum(username[i]) && username[i] != '-')
+            return false;
+    }
+    return true;
+}
+
+
+bool isValidSecret(const char* secret) {
+    size_t length = strlen(secret);
+    if (length > MAX_SECRET_LENGTH)
+        return false;
+    for (size_t i = 0; i < length; i++) {
+        if (!isalnum(secret[i]) && secret[i] != '-')
+            return false;
+    }
+    return true;
+}
+
+bool isValidDisplayName(const char* displayName) {
+    size_t length = strlen(displayName);
+    if (length > MAX_DISPLAY_NAME_LENGTH) return false;
+    for (size_t i = 0; i < length; i++) {
+        if (!isprint(displayName[i]) || displayName[i] < 0x21 || displayName[i] > 0x7E)
+            return false;
+    }
+    return true;
+}
 
 
 void print_usage() {
@@ -92,14 +145,29 @@ void parse_arguments(int argc, char* argv[]) {
 }
 
 void handle_auth(int sock, const char* message) {
+    bool valid = true;
     char username[MAX_USERNAME_LENGTH + 1];
     char secret[MAX_SECRET_LENGTH + 1];
     char displayName[MAX_DISPLAY_NAME_LENGTH + 1];
 
 
-    int argsFilled = sscanf(message, "/auth %20s %128s %20s", username, secret, displayName);
+
+
+    if (client_state == CLIENT_AWAITING_REPLY) {
+        printf("Please wait for the previous action to complete.\n");
+        return;
+    }
+
+
+
+    int argsFilled = sscanf(message, "/auth %s %s %s", username, secret, displayName);
     if (argsFilled != 3) {
         printf("Error: Incorrect AUTH command format.\n");
+        return;
+    }
+
+    if (!isValidUsername(username) || !isValidSecret(secret) || !isValidDisplayName(displayName)) {
+        printf("Error: Validation failed for one or more fields.\n");
         return;
     }
 
@@ -116,24 +184,34 @@ void handle_auth(int sock, const char* message) {
         perror("Error sending AUTH message");
     }
 
-    printf("Sent AUTH message for user: %s", displayName);
+    client_state = CLIENT_AWAITING_REPLY;
+    if (client_state == CLIENT_AWAITING_REPLY) {
+        printf("Client is awaiting reply\n");
+    }
+
+   // printf("Sent AUTH message for user: %s", displayName);
 }
 
 
 void handle_join(int sock, char* message) {
+    if (client_state == CLIENT_AWAITING_REPLY) {
+        printf("Cannot proceed with JOIN. Awaiting server's reply.\n");
+        return;
+    }
     char channelID[MAX_CHANNEL_ID_LENGTH + 1];
 
-    // Попытка извлечь аргумент из введённой строки
+
     if (sscanf(message, "/join %20s", channelID) != 1) {
         printf("ERR: JOIN %s\n", message);
         return;
     }
 
-    // Формируем сообщение согласно протоколу
+
     char join_message[BUFFER_SIZE];
     snprintf(join_message, BUFFER_SIZE, "JOIN %s AS %s\r", channelID, globalDisplayName);
 
-    // Отправляем сформированное сообщение на сервер
+    client_state = CLIENT_AWAITING_REPLY;
+
     send(sock, join_message, strlen(join_message), 0);
 
     printf("Sent JOIN message: %s", join_message);
@@ -141,6 +219,7 @@ void handle_join(int sock, char* message) {
 
 
 void handle_rename(int sock, char* message) {
+
     char newDisplayName[MAX_DISPLAY_NAME_LENGTH + 1];
     if (sscanf(message, "/rename %20s", newDisplayName) != 1) {
         printf("ERR: RENAME %s", message);
@@ -150,10 +229,17 @@ void handle_rename(int sock, char* message) {
     strncpy(globalDisplayName, newDisplayName, MAX_DISPLAY_NAME_LENGTH);
     globalDisplayName[MAX_DISPLAY_NAME_LENGTH] = '\0';
 
-    printf("Your new Name: %s", newDisplayName);
+    printf("Your new Name: %s\n", newDisplayName);
+
 }
 
 void handle_bye(int sock, char* message) {
+
+    if (client_state == CLIENT_AWAITING_REPLY) {
+        printf("Waiting for server's reply before disconnecting.\n");
+        return;
+    }
+
     const char* byeMessage = "BYE\r\n";
     send(sock, byeMessage, strlen(byeMessage), 0);
     printf("Disconnecting from server.");
@@ -163,6 +249,10 @@ void handle_bye(int sock, char* message) {
 
 void handle_msg(int sock, const char* userMessage) {
     //
+    if (client_state == CLIENT_AWAITING_REPLY) {
+        printf("Please wait for the previous action to complete.\n");
+        return;
+    }
     char message[BUFFER_SIZE];
     snprintf(message, BUFFER_SIZE, "MSG FROM %s IS %s\r", globalDisplayName, userMessage);
     send(sock, message, strlen(message), 0);
@@ -170,14 +260,54 @@ void handle_msg(int sock, const char* userMessage) {
 }
 
 
-void handle_response(char *response) {
-    if (strncmp(response, "OK", 2) == 0) {
-        printf("Success\n");
-    } else if (strncmp(response, "NO", 2) == 0) {
-        printf("Failure\n");
-    }else{
-        printf("Server: %s", response);
+void handle_response(char *response, int sock) {
+    // Check if the response is a REPLY type with success or failure message
+    char type[6]; // Buffer to store the message type
+    char status[4]; // Buffer to store the status (OK/NOK)
+    char content[BUFFER_SIZE]; // Buffer to store the message content
+
+
+    if (sscanf(response, "%5s %3s IS %[^\r\n]", type, status, content) == 3) {
+        if (strcmp(type, "REPLY") == 0) {
+            if (strcmp(status, "OK") == 0) {
+                client_state = CLIENT_READY;
+                if(client_state == CLIENT_READY){
+                    printf("Client is ready\n");
+                }
+                printf("Success: %s\n", content);
+            } else {
+                printf("Failure: %s\n", content);
+            }
+        }
+        //
+    } else if (strncmp(response, "MSG FROM", 8) == 0) {
+        // MSG
+        char fromDisplayName[MAX_DISPLAY_NAME_LENGTH + 1];
+        if (sscanf(response, "MSG FROM %20s IS %[^\r\n]", fromDisplayName, content) == 2) {
+            printf("%s: %s\n", fromDisplayName, content);
+        } else {
+            printf("Invalid MSG format received.\n");
+        }
+    } else if (strncmp(response, "ERR", 3) == 0) {
+        // ERR
+        if (sscanf(response, "ERR FROM %[^\r\n]", content) == 1) {
+            fprintf(stderr, "Error: %s\n", content);
+        } else {
+            fprintf(stderr, "Invalid ERR format received.\n");
+        }
+    } else if(strncmp(response, "BYE", 3) == 0) {
+        // BYE
+        printf("Server has disconnected.\n");
+        close(sock);
+        exit(0);
+
+    } else{
+        //
+        printf("Unhandled server response: %s\n", response);
     }
+
+       // printf("Server: %s", response);
+
 
 
 }
@@ -228,7 +358,7 @@ void tcp_client() {
                 }
                 buffer[bytes_received] = '\0';
                 //printf("server: %s", buffer);
-                handle_response(buffer);
+                handle_response(buffer, sock);
             }
             if (fds[1].revents & POLLIN) {
                 char message[BUFFER_SIZE] = {0};
@@ -274,36 +404,32 @@ void tcp_client() {
 
 
 
+int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len) {
+    bool valid = true;
+    char username[MAX_USERNAME_LENGTH + 1];
+    char secret[MAX_SECRET_LENGTH + 1];
+    char displayName[MAX_DISPLAY_NAME_LENGTH + 1];
+    char line[BUFFER_SIZE];
 
+    while(valid == true){
+        if (fgets(line, BUFFER_SIZE, stdin) == NULL) {
+            printf("Error or end-of-file encountered\n");
+            continue;
+        }
+        line[strcspn(line, "\n")] = 0; // Remove newline character
+        if (strcmp(line, "/help") == 0) {
+            handle_help();
+            continue;
+        }
 
-
-
-void init_message_ids_table() {
-    hcreate(512); // Create a hash table with 512 buckets
-}
-
-
-int check_and_update_message_id(const char* message_id) {
-    ENTRY e, *ep;
-    e.key = strdup(message_id);
-    e.data = (void*)1;
-
-    ep = hsearch(e, FIND); // Find the message ID in the hash table
-    if (ep) {
-        free(e.key);
-        return 0;
-    } else {
-        hsearch(e, ENTER);
-        return 1;
     }
+
 }
 
 
 void udp_client(char* server_ip, int server_port) {
     int sock;
-    struct sockaddr_in server_addr, from_addr;
-    socklen_t from_addr_len = sizeof(from_addr);
-    struct pollfd fds[2];
+    struct sockaddr_in server_addr;
 
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -313,48 +439,28 @@ void udp_client(char* server_ip, int server_port) {
 
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(server_port);
-    server_addr.sin_addr.s_addr = inet_addr(server_ip);
+    server_addr.sin_port = htons(config.server_port);
+    server_addr.sin_addr.s_addr = inet_addr(config.server_ip);
 
-    fds[0].fd = sock;
-    fds[0].events = POLLIN;
-    fds[1].fd = STDIN_FILENO;
-    fds[1].events = POLLIN;
+    // Connect to the server
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Connection failed");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+    printf("Connected to the server.\n");
 
-    while (1) {
-        int ret = poll(fds, 2, POLL_TIMEOUT);
-        if (ret > 0) {
-            if (fds[0].revents & POLLIN) {
-                char buffer[BUFFER_SIZE] = {0};
-                int bytes_received = recvfrom(sock, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&from_addr, &from_addr_len);
-                if (bytes_received <= 0) {
-                    printf("Server error or connection closed\n");
-                    break;
-                }
-                char message_id[MAX_MESSAGE_ID_SIZE];
-                buffer[bytes_received] = '\0'; // Null-terminate the received data
-                printf("Server: %s\n", buffer);
-            }
-            if (fds[1].revents & POLLIN) {
-                char message[BUFFER_SIZE] = {0};
-                if (fgets(message, BUFFER_SIZE, stdin) == NULL) {
-                    printf("Error or end-of-file encountered\n");
-                    continue; // Use 'continue' instead of 'break' to stay in the loop
-                }
-                message[strcspn(message, "\n")] = 0;
-                // Use server_addr for sending as it contains the correct server address and port
-                sendto(sock, message, strlen(message), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
-
-            }
-        } else if (ret == 0) {
-            printf("No response from server (timeout).\n");
-        } else {
-            perror("poll error");
+    State state = START_STATE;
+    switch (state) {
+        case START_STATE:
+            Start_state(sock, &server_addr, sizeof(server_addr));
             break;
-        }
+
+
+
     }
 
-    close(sock);
+
 }
 
 int main(int argc, char *argv[]){
@@ -390,8 +496,5 @@ int main(int argc, char *argv[]){
         fprintf(stderr, "Error: bad protocol\n");
         exit(EXIT_FAILURE);
     }
-
-
-
 }
 
