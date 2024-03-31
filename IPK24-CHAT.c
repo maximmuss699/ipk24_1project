@@ -754,7 +754,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
 
     while(connection == 1)
     {
-
+        printf ("AUTH STATE INSIDE FUNCTION\n");
         pthread_mutex_lock(&terminateSignalMutex);
         if (errno == EINTR && terminateSignalReceived) {
             pthread_mutex_unlock(&terminateSignalMutex);
@@ -971,9 +971,6 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
     size_t totalLength2;
     int timeoutml = timeout;
 
-
-
-
     while(recieving == 0){
 
         printf("Reply(OPEN) is %d\n", reply_recieved);
@@ -990,27 +987,6 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             return ERROR_STATE;
         }
 
-
-
-        if (ret == 0 && wait_for_confirm) {
-            // Тайм-аут ожидания подтверждения
-            if (Retries < retry) {
-                // Попытка повторной отправки сообщения
-                int resend = sendto(sock, buffer2, totalLength2, flags, (struct sockaddr *) server_addr,
-                                    server_addr_len);
-                if (resend < 0) {
-                    perror("Failed to resend message");
-                    return ERROR_STATE;
-                }
-
-                Retries++;
-            } else {
-                // Превышено максимальное число попыток
-                printf("Timeout expired, did not receive confirm after retries\n");
-                recieving = 1;
-                return ERROR_STATE;
-            }
-        }
 
 
         if (fds[0].revents & POLLIN) {
@@ -1178,7 +1154,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 }
                 free(message);
                 reply_recieved = 0;
-                recieving = 1;
+                recieving = 0;
 
             }
             else if(buffer[0] == 0x04) // message
@@ -1203,7 +1179,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                     return ERROR_STATE;
                 }
                 free(message);
-                recieving = 1;
+                recieving = 0;
 
 
             }else if(buffer[0] == 0xFE) // error
@@ -1265,7 +1241,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
         }
 
     }
-    //  return END_STATE;
+      //return END_STATE;
 }
 
 int End_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, int flags, uint8_t retry, uint16_t timeout){
