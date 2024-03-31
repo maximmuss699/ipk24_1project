@@ -37,8 +37,8 @@ struct {
     int udp_retries;
 } config = {0};
 
-char globalDisplayName[MAX_DISPLAY_NAME_LENGTH + 1] = ""; // Display name for the client
-char globalDisplayNameUDP[MAX_CHANNEL_ID_LENGTH + 1] = "";
+char Display_name[MAX_DISPLAY_NAME_LENGTH + 1] = ""; // Display name for the client
+
 
 
 
@@ -259,8 +259,8 @@ int Start_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_a
             if (strncmp(message, "/auth ", 6) == 0) {
                 int argsFilled = sscanf(message, "/auth %s %s %s", username, secret, displayName);
                 if (Check_username(username) == true && Check_secret(secret) == true && Check_Displayname(displayName) == true && argsFilled == 3) {
-                    strncpy(globalDisplayName, displayName, MAX_DISPLAY_NAME_LENGTH);
-                    globalDisplayName[MAX_DISPLAY_NAME_LENGTH] = '\0';
+                    strncpy(Display_name, displayName, MAX_DISPLAY_NAME_LENGTH);
+                    Display_name[MAX_DISPLAY_NAME_LENGTH] = '\0';
                     snprintf(auth_message, BUFFER_SIZE, "AUTH %s AS %s USING %s\r", username, displayName, secret);
 
 
@@ -352,8 +352,8 @@ int AUTH_STATETCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
                     int argsFilled = sscanf(message, "/auth %s %s %s", username, secret, displayName);
                     if (Check_username(username) == true && Check_secret(secret) == true &&
                         Check_Displayname(displayName) == true && argsFilled == 3) {
-                        strncpy(globalDisplayName, displayName, MAX_DISPLAY_NAME_LENGTH);
-                        globalDisplayName[MAX_DISPLAY_NAME_LENGTH] = '\0';
+                        strncpy(Display_name, displayName, MAX_DISPLAY_NAME_LENGTH);
+                        Display_name[MAX_DISPLAY_NAME_LENGTH] = '\0';
                         snprintf(auth_message, BUFFER_SIZE, "AUTH %s AS %s USING %s\r", username, displayName,
                                  secret);
 
@@ -430,7 +430,7 @@ int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
                 }
 
             }
-            if (fds[1].revents & POLLIN && recv_reply == 0) // Stdin
+            if (fds[1].revents & POLLIN ) // Stdin
             {
                 if (fgets(message, BUFFER_SIZE, stdin) == NULL) {
                     printf("Error or end-of-file encountered\n");
@@ -442,52 +442,51 @@ int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
                 }
                 message[strcspn(message, "\n")] = 0; // Remove newline character
 
+                if(recv_reply == 0) {
+                    if (strncmp(message, "/join ", 6) == 0) {
+                        int argsFilled = sscanf(message, "/join %20s", channelID);
+                        if (argsFilled == 1 && strlen(channelID) <= MAX_CHANNEL_ID_LENGTH) {
 
-                if (strncmp(message, "/join ", 6) == 0) {
-                    int argsFilled = sscanf(message, "/join %20s", channelID);
-                    if (argsFilled == 1 && strlen(channelID) <= MAX_CHANNEL_ID_LENGTH) {
+                            char join_message[BUFFER_SIZE];
+                            snprintf(join_message, BUFFER_SIZE, "JOIN %s AS %s\r", channelID, Display_name);
+                            if (send(sock, join_message, strlen(join_message), 0) < 0) {
+                                perror("Error sending JOIN message");
+                                open_state = 0;
+                                return ERROR_STATE;
+                            }
 
-                        char join_message[BUFFER_SIZE];
-                        snprintf(join_message, BUFFER_SIZE, "JOIN %s AS %s\r", channelID, globalDisplayName);
-                        if (send(sock, join_message, strlen(join_message), 0) < 0) {
-                            perror("Error sending JOIN message");
+                            recv_reply = 1;
+                            printf("Sent JOIN message: %s", join_message);
+                        } else {
+                            printf("Error: Incorrect JOIN command format.\n");
+                        }
+                    } else if (strncmp(message, "/rename ", 8) == 0) {
+                        int argsFilled = sscanf(message, "/rename %20s", newDisplayName);
+                        if (argsFilled == 1 && Check_Displayname(newDisplayName)) {
+
+                            // Copy the new display name to the global variable
+                            strncpy(Display_name, newDisplayName, MAX_DISPLAY_NAME_LENGTH);
+                            Display_name[MAX_DISPLAY_NAME_LENGTH] = '\0';
+
+                            printf("Your new Name: %s\n", newDisplayName);
+                        } else {
+                            printf("Error: Incorrect RENAME command format.\n");
+                        }
+                    } else if (strncmp(message, "/help", 5) == 0) {
+                        handle_help();
+                    } else {
+                        char msg_message[BUFFER_SIZE];
+                        snprintf(msg_message, BUFFER_SIZE, "MSG FROM %s IS %s\r", Display_name, message);
+                        if (send(sock, msg_message, strlen(msg_message), 0) < 0) {
+                            perror("Error sending MSG message");
                             open_state = 0;
                             return ERROR_STATE;
                         }
+                        printf("%s: %s\n", Display_name, message);
 
-                        recv_reply = 1;
-                        printf("Sent JOIN message: %s", join_message);
-                    }else{
-                        printf("Error: Incorrect JOIN command format.\n");
                     }
-                } else if(strncmp(message, "/rename ", 8) == 0){
-                    int argsFilled = sscanf(message, "/rename %20s", newDisplayName);
-                    if (argsFilled == 1 && Check_Displayname(newDisplayName)) {
-
-                        // Copy the new display name to the global variable
-                        strncpy(globalDisplayName, newDisplayName, MAX_DISPLAY_NAME_LENGTH);
-                        globalDisplayName[MAX_DISPLAY_NAME_LENGTH] = '\0';
-
-                        printf("Your new Name: %s\n", newDisplayName);
-                    }else{
-                        printf("Error: Incorrect RENAME command format.\n");
-                    }
-                }else if (strncmp(message, "/help", 5) == 0) {
-                    handle_help();
-                }
-                else {
-                    char msg_message[BUFFER_SIZE];
-                    snprintf(msg_message, BUFFER_SIZE, "MSG FROM %s IS %s\r", globalDisplayName, message);
-                    if (send(sock, msg_message, strlen(msg_message), 0) < 0) {
-                        perror("Error sending MSG message");
-                        open_state = 0;
-                        return ERROR_STATE;
-                    }
-                    printf("%s: %s\n", globalDisplayName, message);
 
                 }
-
-
             }
         }
     }
@@ -496,7 +495,7 @@ int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
 int Error_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len) {
     const char* ERRessage = "error\r\n";
     char msg_message[BUFFER_SIZE];
-    snprintf(msg_message, BUFFER_SIZE, "ERR FROM %s IS %s\r", globalDisplayName, ERRessage);
+    snprintf(msg_message, BUFFER_SIZE, "ERR FROM %s IS %s\r", Display_name, ERRessage);
     if (send(sock, msg_message, strlen(msg_message), 0) < 0) {
         perror("Error sending BYE message");
         return ERROR_STATE;
@@ -677,14 +676,14 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
         uint16_t networkOrderMessageID = htons(messageID); // Convert message ID to network byte order
 
 
-        int argsFilled = sscanf(line, "/auth %s %s %s", username, secret, globalDisplayNameUDP); // Parse the input line
+        int argsFilled = sscanf(line, "/auth %s %s %s", username, secret, Display_name); // Parse the input line
         printf("username: %s\n", username);
         printf("secret: %s\n", secret);
-        printf("displayName: %s\n", globalDisplayNameUDP);
+        printf("displayName: %s\n", Display_name);
         size_t totalLength = 1 + // Тип сообщения
                              2 + // Message ID
                              strlen(username) + 1 +
-                             strlen(globalDisplayNameUDP) + 1 +
+                             strlen(Display_name) + 1 +
                              strlen(secret) + 1;
         char* message = (char*)malloc(totalLength);
         if (!message) {
@@ -704,8 +703,8 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
         offset += strlen(username) + 1; // +1 для '\0'
 
         // Копируем displayName
-        strcpy(message + offset, globalDisplayNameUDP);
-        offset += strlen(globalDisplayNameUDP) + 1; // +1 для '\0'
+        strcpy(message + offset, Display_name);
+        offset += strlen(Display_name) + 1; // +1 для '\0'
 
         // Копируем secret
         strcpy(message + offset, secret);
@@ -714,7 +713,7 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
         print_hex(message, totalLength);
         printf("Message length: %d\n", totalLength);
         if (Check_username(username) != false && Check_secret(secret) != false &&
-            Check_Displayname(globalDisplayNameUDP) != false && argsFilled == 3) {
+            Check_Displayname(Display_name) != false && argsFilled == 3) {
 
             if (wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, flags, timeout, retry, messageID)) {
                 printf("Authenticated with the server.\n");
@@ -787,14 +786,14 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             uint16_t networkOrderMessageID = htons(messageID); // Convert message ID to network byte order
 
 
-            int argsFilled = sscanf(line, "/auth %s %s %s", username, secret, globalDisplayNameUDP); // Parse the input line
+            int argsFilled = sscanf(line, "/auth %s %s %s", username, secret, Display_name); // Parse the input line
             printf("username: %s\n", username);
             printf("secret: %s\n", secret);
-            printf("globalDisplayNameUDP: %s\n", globalDisplayNameUDP);
+            printf("Display_name: %s\n", Display_name);
             size_t totalLength = 1 + // Тип сообщения
                                  2 + // Message ID
                                  strlen(username) + 1 +
-                                 strlen(globalDisplayNameUDP) + 1 +
+                                 strlen(Display_name) + 1 +
                                  strlen(secret) + 1;
             char* message = (char*)malloc(totalLength);
             if (!message) {
@@ -814,8 +813,8 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             offset += strlen(username) + 1; // +1 для '\0'
 
             // Копируем displayName
-            strcpy(message + offset, globalDisplayNameUDP);
-            offset += strlen(globalDisplayNameUDP) + 1; // +1 для '\0'
+            strcpy(message + offset, Display_name);
+            offset += strlen(Display_name) + 1; // +1 для '\0'
 
             // Копируем secret
             strcpy(message + offset, secret);
@@ -824,7 +823,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             print_hex(message, totalLength);
             printf("Message length: %d\n", totalLength);
             if (Check_username(username) != false && Check_secret(secret) != false &&
-                Check_Displayname(globalDisplayNameUDP) != false && argsFilled == 3) {
+                Check_Displayname(Display_name) != false && argsFilled == 3) {
 
                 int send_auth = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
                 if (send_auth == -1) {
@@ -883,7 +882,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 printf("Received ID(ERROR_AUTH): %d\n", receivedMessageID);
                 size_t totalLength = 1 + // Message type
                                      2 +  // Message ID
-                                     strlen(globalDisplayNameUDP) + 1 + // Длина displayName + '\0'
+                                     strlen(Display_name) + 1 + // Длина displayName + '\0'
                                      strlen(messageContent) + 1;
                 char* message = (char*)malloc(totalLength);
 
@@ -892,8 +891,8 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 message[offset++] = (char)((messageID >> 8) & 0xFF);
                 message[offset++] = (char)(messageID & 0xFF);
 
-                strcpy(message + offset, globalDisplayNameUDP);
-                offset += strlen(globalDisplayNameUDP) + 1; // +1 для '\0'
+                strcpy(message + offset, Display_name);
+                offset += strlen(Display_name) + 1; // +1 для '\0'
 
                 strcpy(message + offset, messageContent);
                 offset += strlen(messageContent) + 1; // +1 для '\0'
@@ -917,7 +916,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 printf("Received ID(BYE): %d\n", receivedMessageID);
                 size_t totalLength2 = 1 + // Message type
                                       2 +  // Message ID
-                                      strlen(globalDisplayNameUDP) + 1 + // Длина displayName + '\0'
+                                      strlen(Display_name) + 1 + // Длина displayName + '\0'
                                       strlen(messageContent2) + 1;
                 char* message2 = (char*)malloc(totalLength2);
 
@@ -926,8 +925,8 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 message[offset2++] = (char)((messageID >> 8) & 0xFF);
                 message[offset2++] = (char)(messageID & 0xFF);
 
-                strcpy(message2 + offset2, globalDisplayNameUDP);
-                offset2 += strlen(globalDisplayNameUDP) + 1; // +1 для '\0'
+                strcpy(message2 + offset2, Display_name);
+                offset2 += strlen(Display_name) + 1; // +1 для '\0'
 
                 strcpy(message2 + offset2, messageContent2);
                 offset2 += strlen(messageContent2) + 1; // +1 для '\0'
@@ -1012,7 +1011,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         size_t totalLength = 1 + // Тип сообщения
                                              2 + // Message ID
                                              strlen(channelID) + 1 +
-                                             strlen(globalDisplayNameUDP) + 1;
+                                             strlen(Display_name) + 1;
 
                         char* message = (char*)malloc(totalLength);
                         if (!message) {
@@ -1032,8 +1031,8 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         offset += strlen(channelID) + 1; // +1 для '\0'
 
                         // Копируем displayName
-                        strcpy(message + offset, globalDisplayNameUDP);
-                        offset += strlen(globalDisplayNameUDP) + 1; // +1 для '\0'
+                        strcpy(message + offset, Display_name);
+                        offset += strlen(Display_name) + 1; // +1 для '\0'
                         print_hex(message, totalLength);
                         printf("Message length(JOIN): %d\n", totalLength);
 
@@ -1060,8 +1059,8 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
 
                         }else {
                             // Copy the new display name to the global variable
-                            strncpy(globalDisplayNameUDP, newDisplayName, MAX_DISPLAY_NAME_LENGTH);
-                            globalDisplayNameUDP[MAX_DISPLAY_NAME_LENGTH] = '\0'; // Add null terminator
+                            strncpy(Display_name, newDisplayName, MAX_DISPLAY_NAME_LENGTH);
+                            Display_name[MAX_DISPLAY_NAME_LENGTH] = '\0'; // Add null terminator
                             printf("Your new Name: %s\n", newDisplayName);
                         }
 
@@ -1076,7 +1075,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         size_t totalLength = 1 + // Тип сообщения
                                              2 + // Message ID
                                              strlen(channelID) + 1 +
-                                             strlen(globalDisplayNameUDP) + 1
+                                             strlen(Display_name) + 1
                                              + strlen(line) + 1;
 
                         char* message = (char*)malloc(totalLength);
@@ -1093,8 +1092,8 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         message[offset++] = (char)(messageID & 0xFF);
 
                         // Копируем displayName
-                        strcpy(message + offset, globalDisplayNameUDP);
-                        offset += strlen(globalDisplayNameUDP) + 1; // +1 для '\0
+                        strcpy(message + offset, Display_name);
+                        offset += strlen(Display_name) + 1; // +1 для '\0
 
                         // add message content
                         strcpy(message + offset, line);
@@ -1279,7 +1278,7 @@ int Error_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
     uint16_t networkOrderMessageID = htons(messageID);
     size_t totalLength = 1 + // Тип сообщения
                          2+ // Message ID
-                         strlen(globalDisplayNameUDP) + 1
+                         strlen(Display_name) + 1
                          + strlen(line) + 1;
 
 
@@ -1295,8 +1294,8 @@ int Error_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
     // Добавляем Message ID
     message[offset++] = (char)((messageID >> 8) & 0xFF);
     message[offset++] = (char)(messageID & 0xFF);
-    strcpy(message + offset, globalDisplayNameUDP);
-    offset += strlen(globalDisplayNameUDP) + 1; // +1 для '\0
+    strcpy(message + offset, Display_name);
+    offset += strlen(Display_name) + 1; // +1 для '\0
     strcpy(message + offset, line);
     offset += strlen(line) + 1; // +1 для '\0'
 
