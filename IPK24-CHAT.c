@@ -40,7 +40,6 @@ struct {
 char globalDisplayName[MAX_DISPLAY_NAME_LENGTH + 1] = ""; // Display name for the client
 char globalDisplayNameUDP[MAX_CHANNEL_ID_LENGTH + 1] = "";
 
-// Two possible states for the client
 
 
 typedef enum {
@@ -148,6 +147,8 @@ void parse_arguments(int argc, char* argv[]) {
 
 
 
+
+
 int handle_response(char *response, int sock, State state) {
     // Check if the response is a REPLY type with success or failure message
     char type[6]; // Buffer to store the message type
@@ -235,7 +236,7 @@ int handle_response(char *response, int sock, State state) {
 
 }
 
-int Start_stateTCP(int sock) {
+int Start_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len) {
     char message[BUFFER_SIZE] = {0};
     char auth_message[BUFFER_SIZE];
     char username[MAX_USERNAME_LENGTH + 1];
@@ -282,7 +283,7 @@ int Start_stateTCP(int sock) {
     return AUTH_STATE;
 }
 
-int AUTH_STATETCP(int sock, State state) {
+int AUTH_STATETCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, State state) {
     char message[BUFFER_SIZE] = {0};
     char auth_message[BUFFER_SIZE];
     char username[MAX_USERNAME_LENGTH + 1];
@@ -380,8 +381,10 @@ int AUTH_STATETCP(int sock, State state) {
 }
 
 
-int Open_stateTCP(int sock, State state) {
+int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, State state) {
     char message[BUFFER_SIZE] = {0};
+    char auth_message[BUFFER_SIZE];
+    char displayName[MAX_DISPLAY_NAME_LENGTH + 1];
     char channelID[MAX_CHANNEL_ID_LENGTH + 1];
     char newDisplayName[MAX_DISPLAY_NAME_LENGTH + 1];
     struct pollfd fds[2]; // Polling file descriptors
@@ -393,7 +396,7 @@ int Open_stateTCP(int sock, State state) {
     int recv_reply = 0;
     while (open_state == 1) {
 
-        printf("Replay is OPEN%d\n", recv_reply);
+        printf("Replay is %d\n", recv_reply);
         pthread_mutex_lock(&terminateSignalMutex);
         if (errno == EINTR && terminateSignalReceived) {
             pthread_mutex_unlock(&terminateSignalMutex);
@@ -453,7 +456,7 @@ int Open_stateTCP(int sock, State state) {
                         }
 
                         recv_reply = 1;
-                        printf("Sent JOIN message: %s\n", join_message);
+                        printf("Sent JOIN message: %s", join_message);
                     }else{
                         printf("Error: Incorrect JOIN command format.\n");
                     }
@@ -490,7 +493,7 @@ int Open_stateTCP(int sock, State state) {
     }
 }
 
-int Error_stateTCP(int sock) {
+int Error_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len) {
     const char* ERRessage = "error\r\n";
     char msg_message[BUFFER_SIZE];
     snprintf(msg_message, BUFFER_SIZE, "ERR FROM %s IS %s\r", globalDisplayName, ERRessage);
@@ -501,7 +504,7 @@ int Error_stateTCP(int sock) {
     return END_STATE;
 }
 
-int End_stateTCP(int sock) {
+int End_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len) {
     const char* byeMessage = "BYE\r\n";
     if (send(sock, byeMessage, strlen(byeMessage), 0) < 0) {
         perror("Error sending ERR");
@@ -551,23 +554,23 @@ void tcp_client() {
         switch (state) {
             case START_STATE:
                 printf(("Start state\n"));
-                state = Start_stateTCP(sock);
+                state = Start_stateTCP(sock, &server_addr, sizeof(server_addr));
                 break;
             case AUTH_STATE:
                 printf("Auth state\n");
-                state = AUTH_STATETCP(sock, state);
+                state = AUTH_STATETCP(sock, &server_addr, sizeof(server_addr), state);
                 break;
             case OPEN_STATE:
                 printf("Open state\n");
-                state = Open_stateTCP(sock, state);
+                state = Open_stateTCP(sock, &server_addr, sizeof(server_addr), state);
                 break;
             case ERROR_STATE:
                 printf("Error state\n");
-                state = Error_stateTCP(sock);
+                state = Error_stateTCP(sock, &server_addr, sizeof(server_addr));
                 break;
             case END_STATE:
                 printf("End state\n");
-                state = End_stateTCP(sock);
+                state = End_stateTCP(sock, &server_addr, sizeof(server_addr));
                 break;
             default:
                 perror("Invalid state");
@@ -586,12 +589,6 @@ void signalHandler(int signal) {
         pthread_mutex_unlock(&terminateSignalMutex);
     }
 }
-
-
-
-
-
-
 
 void print_hex(const char* message, int len) {
     for (int i = 0; i < len; ++i) {
@@ -632,8 +629,8 @@ int wait_confirm(int sockfd, const char* message, size_t message_size, struct so
                 char buffer[1024];
                 ssize_t bytes_received = recvfrom(sockfd, buffer, sizeof(buffer), 0, address, &address_size);
                 if (bytes_received == -1) {
-                        perror("Failed to receive message");
-                        break;
+                    perror("Failed to receive message");
+                    break;
                 } else {
                     printf("Expected ID: %d\n", expectedMessageID);
                     // Received message ID and compare with expected ID
@@ -717,7 +714,7 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
         print_hex(message, totalLength);
         printf("Message length: %d\n", totalLength);
         if (Check_username(username) != false && Check_secret(secret) != false &&
-                Check_Displayname(globalDisplayNameUDP) != false && argsFilled == 3) {
+            Check_Displayname(globalDisplayNameUDP) != false && argsFilled == 3) {
 
             if (wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, flags, timeout, retry, messageID)) {
                 printf("Authenticated with the server.\n");
@@ -827,7 +824,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             print_hex(message, totalLength);
             printf("Message length: %d\n", totalLength);
             if (Check_username(username) != false && Check_secret(secret) != false &&
-                    Check_Displayname(globalDisplayNameUDP) != false && argsFilled == 3) {
+                Check_Displayname(globalDisplayNameUDP) != false && argsFilled == 3) {
 
                 int send_auth = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
                 if (send_auth == -1) {
@@ -838,12 +835,12 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 free(message);
                 wait_reply = 1;
                 messageID += 0x0001;
-                } else {
-                    printf("Invalid input:\n");
-                }
-
-
+            } else {
+                printf("Invalid input:\n");
             }
+
+
+        }
 
         if (fds[0].revents & POLLIN) { // Read from the server
             int recv_reply = recvfrom(sock, buffer, BUFFER_SIZE, flags, (struct sockaddr*)server_addr, &server_addr_len);
@@ -886,8 +883,8 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 printf("Received ID(ERROR_AUTH): %d\n", receivedMessageID);
                 size_t totalLength = 1 + // Message type
                                      2 +  // Message ID
-                strlen(globalDisplayNameUDP) + 1 + // Длина displayName + '\0'
-                strlen(messageContent) + 1;
+                                     strlen(globalDisplayNameUDP) + 1 + // Длина displayName + '\0'
+                                     strlen(messageContent) + 1;
                 char* message = (char*)malloc(totalLength);
 
                 size_t offset = 0;
@@ -919,9 +916,9 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 receivedMessageID = (buffer[1] << 8) | buffer[2];
                 printf("Received ID(BYE): %d\n", receivedMessageID);
                 size_t totalLength2 = 1 + // Message type
-                                     2 +  // Message ID
-                                     strlen(globalDisplayNameUDP) + 1 + // Длина displayName + '\0'
-                                     strlen(messageContent2) + 1;
+                                      2 +  // Message ID
+                                      strlen(globalDisplayNameUDP) + 1 + // Длина displayName + '\0'
+                                      strlen(messageContent2) + 1;
                 char* message2 = (char*)malloc(totalLength2);
 
                 size_t offset2 = 0;
@@ -949,8 +946,8 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             }
         }
 
-        }
-   // return OPEN_STATE;
+    }
+    // return OPEN_STATE;
 }
 
 int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, int flags, uint8_t retry, uint16_t timeout) {
@@ -1104,7 +1101,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                                              2 + // Message ID
                                              strlen(channelID) + 1 +
                                              strlen(globalDisplayNameUDP) + 1
-                                                + strlen(line) + 1;
+                                             + strlen(line) + 1;
 
                         char* message = (char*)malloc(totalLength);
                         if (!message) {
@@ -1268,7 +1265,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
         }
 
     }
-  //  return END_STATE;
+    //  return END_STATE;
 }
 
 int End_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, int flags, uint8_t retry, uint16_t timeout){
@@ -1306,8 +1303,8 @@ int Error_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
     uint16_t networkOrderMessageID = htons(messageID);
     size_t totalLength = 1 + // Тип сообщения
                          2+ // Message ID
-    strlen(globalDisplayNameUDP) + 1
-    + strlen(line) + 1;
+                         strlen(globalDisplayNameUDP) + 1
+                         + strlen(line) + 1;
 
 
     char* message = (char*)malloc(totalLength);
@@ -1360,52 +1357,51 @@ void udp_client(char* server_ip, int server_port) {
     uint16_t timeout = 25000;
     uint8_t retry = 3;
 
-while(1) {
-    switch (state) {
-        case START_STATE: {
-            state = Start_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout );
-            printf("START state\n");
-            break;
+    while(1) {
+        switch (state) {
+            case START_STATE: {
+                state = Start_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout );
+                printf("START state\n");
+                break;
+            }
+
+            case AUTH_STATE: {
+                printf("AUTH state\n");
+                state = Auth_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
+                break;
+            }
+
+            case OPEN_STATE: {
+                printf("OPEN state\n");
+
+                state = Open_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
+                break;
+            }
+
+            case ERROR_STATE: {
+                printf("ERROR state\n");
+                state = Error_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
+                break;
+            }
+
+            case END_STATE: {
+                printf("END state\n");
+                state = End_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
+                break;
+            }
+
+
         }
-
-        case AUTH_STATE: {
-            printf("AUTH state\n");
-            state = Auth_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
-            break;
-        }
-
-        case OPEN_STATE: {
-            printf("OPEN state\n");
-
-            state = Open_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
-            break;
-        }
-
-        case ERROR_STATE: {
-            printf("ERROR state\n");
-            state = Error_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
-            break;
-        }
-
-        case END_STATE: {
-            printf("END state\n");
-            state = End_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
-            break;
-        }
-
 
     }
 
-}
-
 
 }
-
 int main(int argc, char *argv[]){
     //
     parse_arguments(argc, argv);
     //
-
+    signal(SIGINT, signalHandler);
 
     if (config.server_port != DEFAULT_SERVER_PORT){
         fprintf(stderr, "Error: bad port\n");
@@ -1435,4 +1431,8 @@ int main(int argc, char *argv[]){
         exit(EXIT_FAILURE);
     }
 }
+
+
+
+
 
