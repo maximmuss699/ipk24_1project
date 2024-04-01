@@ -49,8 +49,6 @@ struct {
 char Display_name[MAX_DISPLAY_NAME_LENGTH + 1] = ""; // Display name for the client
 
 
-
-
 typedef enum {
     START_STATE,
     AUTH_STATE,
@@ -59,8 +57,9 @@ typedef enum {
     END_STATE
 } State;
 
-
+// global message ID
 uint16_t messageID = 0x0000;
+
 
 bool Check_username(const char* username) {
     size_t length = strlen(username);
@@ -157,7 +156,7 @@ void parse_arguments(int argc, char* argv[]) {
 
 
 
-
+// Function to handle the server response in TCP protocol
 int handle_response(char *response, int sock, State state) {
     // Check if the response is a REPLY type with success or failure message
     char type[6]; // Buffer to store the message type
@@ -690,13 +689,13 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
             return ERROR_STATE;
         }
 
-        uint16_t networkOrderMessageID = htons(messageID); // Convert message ID to network byte order
+        uint16_t netOrderMessageID = htons(messageID); // Convert message ID to network byte order
         size_t offset = 0;
         message[offset++] = '\x02';
 
 
-        message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
-        message[offset++] = (char)(networkOrderMessageID & 0xFF);
+        message[offset++] = (char)((netOrderMessageID >> 8) & 0xFF);
+        message[offset++] = (char)(netOrderMessageID & 0xFF);
 
 
         strcpy(message + offset, username);
@@ -714,7 +713,7 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
         if (Check_username(username) != false && Check_secret(secret) != false &&
             Check_Displayname(Display_name) != false && argsFilled == 3) {
 
-            if (wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, timeout, retry, networkOrderMessageID)) {
+            if (wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, timeout, retry, netOrderMessageID)) {
                 free (message);
                 return AUTH_STATE; // auth state = 1
             } else {
@@ -793,7 +792,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 }
             }
 
-            uint16_t networkOrderMessageID = htons(messageID); // Convert message ID to network byte order
+            uint16_t netOrderMessageID = htons(messageID); // Convert message ID to network byte order
             int argsFilled = sscanf(line, "/auth %s %s %s", username, secret, Display_name); // Parse the input line
             size_t totalLength = 1 + // Message type
                                  2 + // Message ID
@@ -809,8 +808,8 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             size_t offset = 0;
             message[offset++] = '\x02'; // Message type AUTH
 
-            message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
-            message[offset++] = (char)(networkOrderMessageID & 0xFF);
+            message[offset++] = (char)((netOrderMessageID >> 8) & 0xFF);
+            message[offset++] = (char)(netOrderMessageID & 0xFF);
 
 
             strcpy(message + offset, username);
@@ -971,7 +970,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
     int Retries = 0;
     int reply_recieved = 0;
     size_t totalLength2;
-    uint16_t networkOrderMessageID2;
+    uint16_t netOrderMessageID2;
 
 
     while(recieving == 0){
@@ -994,7 +993,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
         // Retransmission of message if no confirmation received and timeout occurred
         if(ret == 0 && waiting_confirm == 1)
         {
-            if (wait_confirm(sock, buffer2, totalLength2, (struct sockaddr*)server_addr, server_addr_len, timeout, retry, networkOrderMessageID2)) {
+            if (wait_confirm(sock, buffer2, totalLength2, (struct sockaddr*)server_addr, server_addr_len, timeout, retry, netOrderMessageID2)) {
                 waiting_confirm = 0;
             } else {
                 recieving = 1; // If the message was not confirmed after all retries, end the connection
@@ -1022,8 +1021,8 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 if (reply_recieved == 0) // If the server did not reply to the previous message
                 {
                     if (strncmp(line, "/join ", 6) == 0) {
-                        uint16_t networkOrderMessageID = htons(messageID);
-                        networkOrderMessageID2 = networkOrderMessageID;
+                        uint16_t netOrderMessageID = htons(messageID);
+                        netOrderMessageID2 = netOrderMessageID;
                         int argsFilled = sscanf(line, "/join %s", channelID);
                         size_t totalLength = 1 + // Message type
                                              2 + // Message ID
@@ -1040,8 +1039,8 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         message[offset++] = '\x03';
 
 
-                        message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
-                        message[offset++] = (char)(networkOrderMessageID & 0xFF);
+                        message[offset++] = (char)((netOrderMessageID >> 8) & 0xFF);
+                        message[offset++] = (char)(netOrderMessageID & 0xFF);
 
 
                         strcpy(message + offset, channelID);
@@ -1086,8 +1085,8 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
 
                     }
                     else { // sending message
-                        uint16_t networkOrderMessageID = htons(messageID);
-                        networkOrderMessageID2 = networkOrderMessageID;
+                        uint16_t netOrderMessageID = htons(messageID);
+                        netOrderMessageID2 = netOrderMessageID;
                         size_t totalLength = 1 + // Message type
                                              2 + // Message ID
                                              strlen(channelID) + 1 +
@@ -1104,8 +1103,8 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         message[offset++] = '\x04';
 
 
-                        message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
-                        message[offset++] = (char)(networkOrderMessageID & 0xFF);
+                        message[offset++] = (char)((netOrderMessageID >> 8) & 0xFF);
+                        message[offset++] = (char)(netOrderMessageID & 0xFF);
 
 
                         strcpy(message + offset, Display_name);
@@ -1308,7 +1307,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
 }
 
 int End_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, uint8_t retry, uint16_t timeout){
-    uint16_t networkOrderMessageID = htons(messageID);
+    uint16_t netOrderMessageID = htons(messageID);
     size_t totalLength = 1 +
                          2;
 
@@ -1323,23 +1322,23 @@ int End_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_l
     message[offset++] = '\xFF'; // BYE type
 
 
-    message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
-    message[offset++] = (char)(networkOrderMessageID & 0xFF);
+    message[offset++] = (char)((netOrderMessageID >> 8) & 0xFF);
+    message[offset++] = (char)(netOrderMessageID & 0xFF);
 
 
 
 
-    wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, timeout, retry, networkOrderMessageID);
+    wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, timeout, retry, netOrderMessageID);
     free (message);
     close(sock);
     exit(0);
 }
 
 int Error_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, uint8_t retry, uint16_t timeout){
-    char line[BUFFER_SIZE] = "Error";
+    char line[BUFFER_SIZE] = "ERROR";
 
-    uint16_t networkOrderMessageID = htons(messageID);
-    size_t totalLength = 1 + // Message type
+    uint16_t netOrderMessageID = htons(messageID);
+    size_t totalLength = 1 + // ERROR Message type
                          2+ // Message ID
                          strlen(Display_name) + 1
                          + strlen(line) + 1;
@@ -1354,13 +1353,13 @@ int Error_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
     size_t offset = 0;
     message[offset++] = '\xFE';
 
-    message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
-    message[offset++] = (char)(networkOrderMessageID & 0xFF);
+    message[offset++] = (char)((netOrderMessageID >> 8) & 0xFF);
+    message[offset++] = (char)(netOrderMessageID & 0xFF);
     strcpy(message + offset, Display_name);
     offset += strlen(Display_name) + 1;
     strcpy(message + offset, line);
     offset += strlen(line) + 1;
-    wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, timeout, retry, networkOrderMessageID);
+    wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, timeout, retry, netOrderMessageID);
     free (message);
     messageID += 0x0001;
     return END_STATE;
