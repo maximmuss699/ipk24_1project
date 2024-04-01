@@ -8,4 +8,4 @@ ipk24chat-client: IPK24-CHAT.c
 
 .PHONY: clean
 clean:
-	rm -f ipk24chat-client udp_test
+	rm -f ipk24chat-client
