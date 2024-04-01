@@ -1433,6 +1433,11 @@ void udp_client() {
 }
 
 int main(int argc, char *argv[]){
+    if (argc == 1) {
+        fprintf(stderr, "ERR: No arguments given.\n");
+        print_usage();
+        exit(1);
+    }
     //
     parse_arguments(argc, argv);
     //
