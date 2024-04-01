@@ -1,11 +1,11 @@
 CC=gcc
 CFLAGS=-I. -Wall -Wextra -pedantic -std=c99 -g
 
-all: IPK24-CHAT
+all: ipk24chat-client
 
-IPK24-CHAT: IPK24-CHAT.c
-	$(CC) -o IPK24-CHAT IPK24-CHAT.c $(CFLAGS)
+ipk24chat-client: IPK24-CHAT.c
+	$(CC) -o ipk24chat-client IPK24-CHAT.c $(CFLAGS)
 
 .PHONY: clean
 clean:
-	rm -f IPK24-CHAT
+	rm -f ipk24chat-client udp_test
