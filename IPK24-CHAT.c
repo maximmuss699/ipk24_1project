@@ -970,8 +970,8 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             return ERROR_STATE;
         }
 
-
         if (fds[0].revents & POLLIN) {
+
             if (fgets(line, BUFFER_SIZE, stdin) == NULL) {
                 if (feof(stdin)) {
                     printf("EOF detected\n");
