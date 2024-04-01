@@ -1,3 +1,12 @@
+/**
+ * @file IPK24-CHAT.c
+ *
+ * @name IPK project 1 - Chat client
+ * @brief Chat application client
+ * @author Maksim Samusevich(xsamus00)
+ * @date 01.04.2024
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,16 +18,15 @@
 #include <search.h>
 #include <stdbool.h>
 #include <ctype.h>
-#include <fcntl.h>
 #include <errno.h>
 #include <signal.h>
+#include <netdb.h>
 #include <pthread.h>
+
 
 #define BUFFER_SIZE 1024
 #define DEFAULT_SERVER_PORT 4567
-#define DEFAULT_UDP_TIMEOUT 250
-#define DEFAULT_UDP_RETRIES 3
-#define POLL_TIMEOUT 50000
+#define POLL_TIMEOUT 20000
 #define MAX_USERNAME_LENGTH 20
 #define MAX_SECRET_LENGTH 128
 #define MAX_DISPLAY_NAME_LENGTH 20
@@ -154,9 +162,9 @@ int handle_response(char *response, int sock, State state) {
     char type[6]; // Buffer to store the message type
     char status[4]; // Buffer to store the status (OK/NOK)
     char content[BUFFER_SIZE]; // Buffer to store the message content
-    printf("Response: %d\n", state);
+
     if (state == AUTH_STATE) {
-        printf("Response HANDLE AUTH: %s\n", response);
+
         if (sscanf(response, "%5s %3s IS %[^\r\n]", type, status, content) == 3) {
             if (strcmp(type, "REPLY") == 0) {
                 if (strcmp(status, "OK") == 0) {
@@ -186,7 +194,7 @@ int handle_response(char *response, int sock, State state) {
             return 3;
         }
     } else if(state == OPEN_STATE){
-        printf("HANDLE OPEN: %s\n", response);
+
         if (sscanf(response, "%5s %3s IS %[^\r\n]", type, status, content) == 3) {
             if (strcmp(type, "REPLY") == 0) {
                 if (strcmp(status, "OK") == 0) {
@@ -236,7 +244,7 @@ int handle_response(char *response, int sock, State state) {
 
 }
 
-int Start_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len) {
+int Start_stateTCP(int sock ){
     char message[BUFFER_SIZE] = {0};
     char auth_message[BUFFER_SIZE];
     char username[MAX_USERNAME_LENGTH + 1];
@@ -261,7 +269,7 @@ int Start_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_a
                 if (Check_username(username) == true && Check_secret(secret) == true && Check_Displayname(displayName) == true && argsFilled == 3) {
                     strncpy(Display_name, displayName, MAX_DISPLAY_NAME_LENGTH);
                     Display_name[MAX_DISPLAY_NAME_LENGTH] = '\0';
-                    snprintf(auth_message, BUFFER_SIZE, "AUTH %s AS %s USING %s\r", username, displayName, secret);
+                    snprintf(auth_message, BUFFER_SIZE, "AUTH %s AS %s USING %s\r\n", username, displayName, secret);
 
 
                     if (send(sock, auth_message, strlen(auth_message), 0) < 0) {
@@ -283,7 +291,7 @@ int Start_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_a
     return AUTH_STATE;
 }
 
-int AUTH_STATETCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, State state) {
+int AUTH_STATETCP(int sock, State state) {
     char message[BUFFER_SIZE] = {0};
     char auth_message[BUFFER_SIZE];
     char username[MAX_USERNAME_LENGTH + 1];
@@ -319,7 +327,7 @@ int AUTH_STATETCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
                     exit(1);
                 }
                 buffer[bytes_received] = '\0';
-                printf("server: %s", buffer);
+
                 int response = handle_response(buffer, sock, state);
 
                 if (response == 0) {
@@ -354,7 +362,7 @@ int AUTH_STATETCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
                         Check_Displayname(displayName) == true && argsFilled == 3) {
                         strncpy(Display_name, displayName, MAX_DISPLAY_NAME_LENGTH);
                         Display_name[MAX_DISPLAY_NAME_LENGTH] = '\0';
-                        snprintf(auth_message, BUFFER_SIZE, "AUTH %s AS %s USING %s\r", username, displayName,
+                        snprintf(auth_message, BUFFER_SIZE, "AUTH %s AS %s USING %s\r\n", username, displayName,
                                  secret);
 
 
@@ -381,10 +389,8 @@ int AUTH_STATETCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
 }
 
 
-int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, State state) {
+int Open_stateTCP(int sock, State state) {
     char message[BUFFER_SIZE] = {0};
-    char auth_message[BUFFER_SIZE];
-    char displayName[MAX_DISPLAY_NAME_LENGTH + 1];
     char channelID[MAX_CHANNEL_ID_LENGTH + 1];
     char newDisplayName[MAX_DISPLAY_NAME_LENGTH + 1];
     struct pollfd fds[2]; // Polling file descriptors
@@ -396,7 +402,7 @@ int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
     int recv_reply = 0;
     while (open_state == 1) {
 
-        printf("Replay is %d\n", recv_reply);
+
         pthread_mutex_lock(&terminateSignalMutex);
         if (errno == EINTR && terminateSignalReceived) {
             pthread_mutex_unlock(&terminateSignalMutex);
@@ -415,10 +421,10 @@ int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
                     exit(1);
                 }
                 buffer[bytes_received] = '\0';
-                printf("server: %s", buffer);
+
                 int response = handle_response(buffer, sock, state);
 
-                if (response == 0) {
+                if (response == 0){
                     recv_reply = 0;
                 } else if (response == 1) {
                     recv_reply = 0;
@@ -448,7 +454,7 @@ int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
                         if (argsFilled == 1 && strlen(channelID) <= MAX_CHANNEL_ID_LENGTH) {
 
                             char join_message[BUFFER_SIZE];
-                            snprintf(join_message, BUFFER_SIZE, "JOIN %s AS %s\r", channelID, Display_name);
+                            snprintf(join_message, BUFFER_SIZE, "JOIN %s AS %s\r\n", channelID, Display_name);
                             if (send(sock, join_message, strlen(join_message), 0) < 0) {
                                 perror("Error sending JOIN message");
                                 open_state = 0;
@@ -476,7 +482,7 @@ int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
                         handle_help();
                     } else {
                         char msg_message[BUFFER_SIZE];
-                        snprintf(msg_message, BUFFER_SIZE, "MSG FROM %s IS %s\r", Display_name, message);
+                        snprintf(msg_message, BUFFER_SIZE, "MSG FROM %s IS %s\r\n", Display_name, message);
                         if (send(sock, msg_message, strlen(msg_message), 0) < 0) {
                             perror("Error sending MSG message");
                             open_state = 0;
@@ -492,10 +498,10 @@ int Open_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_ad
     }
 }
 
-int Error_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len) {
+int Error_stateTCP(int sock) {
     const char* ERRessage = "error\r\n";
     char msg_message[BUFFER_SIZE];
-    snprintf(msg_message, BUFFER_SIZE, "ERR FROM %s IS %s\r", Display_name, ERRessage);
+    snprintf(msg_message, BUFFER_SIZE, "ERR FROM %s IS %s\r\n", Display_name, ERRessage);
     if (send(sock, msg_message, strlen(msg_message), 0) < 0) {
         perror("Error sending BYE message");
         return ERROR_STATE;
@@ -503,7 +509,7 @@ int Error_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_a
     return END_STATE;
 }
 
-int End_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len) {
+int End_stateTCP(int sock) {
     const char* byeMessage = "BYE\r\n";
     if (send(sock, byeMessage, strlen(byeMessage), 0) < 0) {
         perror("Error sending ERR");
@@ -519,57 +525,58 @@ int End_stateTCP(int sock, struct sockaddr_in* server_addr, socklen_t server_add
 void tcp_client() {
     int sock;
     struct sockaddr_in server_addr;
-    struct pollfd fds[2]; // Polling file descriptors
+    struct hostent* he;
+    struct pollfd fds[2];
 
-    // Create and connect the socket
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
+
+    if ((he = gethostbyname(config.server_ip)) == NULL) {
+        herror("gethostbyname");
+        exit(EXIT_FAILURE);
+    }
+
+
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation failed");
         exit(EXIT_FAILURE);
     }
 
-    memset(&server_addr, 0, sizeof(server_addr));
+
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(config.server_port);
-    server_addr.sin_addr.s_addr = inet_addr(config.server_ip);
+    server_addr.sin_addr = *((struct in_addr*)he->h_addr);
 
-    // Connect to the server
-    if (connect(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
+
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connection failed");
         close(sock);
         exit(EXIT_FAILURE);
     }
     printf("Connected to the server.\n");
 
-    // Initialize pollfd for the connected socket
-    fds[0].fd = sock;
-    fds[0].events = POLLIN;
-    fds[1].fd = STDIN_FILENO; // Standard input
-    fds[1].events = POLLIN; // Check for normal data
     State state = START_STATE;
 
     while (1) {
 
         switch (state) {
             case START_STATE:
-                printf(("Start state\n"));
-                state = Start_stateTCP(sock, &server_addr, sizeof(server_addr));
+
+                state = Start_stateTCP(sock);
                 break;
             case AUTH_STATE:
-                printf("Auth state\n");
-                state = AUTH_STATETCP(sock, &server_addr, sizeof(server_addr), state);
+
+                state = AUTH_STATETCP(sock, state);
                 break;
             case OPEN_STATE:
-                printf("Open state\n");
-                state = Open_stateTCP(sock, &server_addr, sizeof(server_addr), state);
+
+                state = Open_stateTCP(sock, state);
                 break;
             case ERROR_STATE:
-                printf("Error state\n");
-                state = Error_stateTCP(sock, &server_addr, sizeof(server_addr));
+
+                state = Error_stateTCP(sock);
                 break;
             case END_STATE:
-                printf("End state\n");
-                state = End_stateTCP(sock, &server_addr, sizeof(server_addr));
+
+                state = End_stateTCP(sock);
                 break;
             default:
                 perror("Invalid state");
@@ -589,6 +596,7 @@ void signalHandler(int signal) {
     }
 }
 
+// Function for checking the input arguments
 void print_hex(const char* message, int len) {
     for (int i = 0; i < len; ++i) {
         printf("%02x ", (unsigned char)message[i]);
@@ -597,22 +605,15 @@ void print_hex(const char* message, int len) {
 }
 
 
-int wait_confirm(int sockfd, const char* message, size_t message_size, struct sockaddr* address, socklen_t address_size, int flags, uint16_t timeout, uint8_t retry, uint16_t expectedMessageID) {
-    int attempts = 0;
-    int confirmed = 0;
+int wait_confirm(int sock, const char* message, size_t message_size, struct sockaddr* address, socklen_t address_size, int flags, uint16_t timeout, uint8_t retry, uint16_t expectedMessageID) {
     struct pollfd fds[1];
-    fds[0].fd = sockfd;
+    fds[0].fd = sock;
     fds[0].events = POLLIN;
+    int try = 0;
+    int confirm = 0;
 
-    // set non-blocking mode
-    int current_flags = fcntl(sockfd, F_GETFL, 0);
-    if (fcntl(sockfd, F_SETFL, current_flags | O_NONBLOCK) == -1) {
-        perror("Failed to set non-blocking mode");
-        exit(EXIT_FAILURE);
-    }
-
-    while (attempts < retry + 1 && !confirmed) {
-        if (sendto(sockfd, message, message_size, flags, address, address_size) == -1) {
+    while (try < retry + 1 && !confirm) {
+        if (sendto(sock, message, message_size, flags, address, address_size) == -1) {
             perror("Failed to send message");
             continue;
         }
@@ -626,32 +627,25 @@ int wait_confirm(int sockfd, const char* message, size_t message_size, struct so
         } else {
             if (fds[0].revents & POLLIN) {
                 char buffer[1024];
-                ssize_t bytes_received = recvfrom(sockfd, buffer, sizeof(buffer), 0, address, &address_size);
+                ssize_t bytes_received = recvfrom(sock, buffer, sizeof(buffer), 0, address, &address_size);
                 if (bytes_received == -1) {
                     perror("Failed to receive message");
                     break;
                 } else {
-                    printf("Expected ID: %d\n", expectedMessageID);
+
                     // Received message ID and compare with expected ID
                     uint16_t receivedMessageID = (buffer[1] << 8) | buffer[2];
-                    printf("Received ID: %d\n", receivedMessageID);
+
                     if (receivedMessageID == expectedMessageID) {
-                        confirmed = 1;
+                        confirm = 1;
                     }
                 }
             }
         }
 
-        attempts++;
+        try++;
     }
-
-    // Восстанавливаем блокирующий режим сокета
-    if (fcntl(sockfd, F_SETFL, current_flags) == -1) {
-        perror("Failed to restore blocking mode");
-        exit(EXIT_FAILURE);
-    }
-
-    return confirmed;
+    return confirm;
 }
 
 int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, int flags, uint8_t retry, uint16_t timeout) {
@@ -659,7 +653,7 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
     char username[MAX_USERNAME_LENGTH + 1];
     char secret[MAX_SECRET_LENGTH + 1];
     char line[BUFFER_SIZE];
-    char message[BUFFER_SIZE];
+
 
 
     while (valid == true) {
@@ -673,14 +667,10 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
             continue;
         }
 
-        uint16_t networkOrderMessageID = htons(messageID); // Convert message ID to network byte order
 
 
         int argsFilled = sscanf(line, "/auth %s %s %s", username, secret, Display_name); // Parse the input line
-        printf("username: %s\n", username);
-        printf("secret: %s\n", secret);
-        printf("displayName: %s\n", Display_name);
-        size_t totalLength = 1 + // Тип сообщения
+        size_t totalLength = 1 + // Message type
                              2 + // Message ID
                              strlen(username) + 1 +
                              strlen(Display_name) + 1 +
@@ -691,31 +681,31 @@ int Start_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
             return ERROR_STATE;
         }
 
+        uint16_t networkOrderMessageID = htons(messageID); // Convert message ID to network byte order
         size_t offset = 0;
-        message[offset++] = '\x02'; // Тип сообщения AUTH
+        message[offset++] = '\x02';
 
-        // Добавляем Message ID
-        message[offset++] = (char)((messageID >> 8) & 0xFF);
-        message[offset++] = (char)(messageID & 0xFF);
 
-        // Копируем username
+        message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
+        message[offset++] = (char)(networkOrderMessageID & 0xFF);
+
+
         strcpy(message + offset, username);
-        offset += strlen(username) + 1; // +1 для '\0'
+        offset += strlen(username) + 1;
 
-        // Копируем displayName
+
         strcpy(message + offset, Display_name);
-        offset += strlen(Display_name) + 1; // +1 для '\0'
+        offset += strlen(Display_name) + 1;
 
-        // Копируем secret
+
         strcpy(message + offset, secret);
-        offset += strlen(secret) + 1; // +1 для '\0'
+        offset += strlen(secret) + 1;
 
-        print_hex(message, totalLength);
-        printf("Message length: %d\n", totalLength);
+
         if (Check_username(username) != false && Check_secret(secret) != false &&
             Check_Displayname(Display_name) != false && argsFilled == 3) {
 
-            if (wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, flags, timeout, retry, messageID)) {
+            if (wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, flags, timeout, retry, networkOrderMessageID)) {
                 printf("Authenticated with the server.\n");
                 free (message);
                 return AUTH_STATE; // auth state = 1
@@ -738,8 +728,6 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
     char line[BUFFER_SIZE];
 
     struct pollfd fds[2];
-    int nfds = 2;
-
     fds[0].fd = sock;
     fds[0].events = POLLIN;
     fds[1].fd = STDIN_FILENO;
@@ -753,7 +741,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
 
     while(connection == 1)
     {
-        printf ("AUTH STATE INSIDE FUNCTION\n");
+
         pthread_mutex_lock(&terminateSignalMutex);
         if (errno == EINTR && terminateSignalReceived) {
             pthread_mutex_unlock(&terminateSignalMutex);
@@ -761,7 +749,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
         }
         pthread_mutex_unlock(&terminateSignalMutex);
 
-        int ret = poll(fds, nfds, -1); // Ожидание бесконечно или до события
+        int ret = poll(fds, 2, -1);
         if (ret < 0) {
             perror("poll");
             return ERROR_STATE;
@@ -787,10 +775,7 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
 
 
             int argsFilled = sscanf(line, "/auth %s %s %s", username, secret, Display_name); // Parse the input line
-            printf("username: %s\n", username);
-            printf("secret: %s\n", secret);
-            printf("Display_name: %s\n", Display_name);
-            size_t totalLength = 1 + // Тип сообщения
+            size_t totalLength = 1 + // Message type
                                  2 + // Message ID
                                  strlen(username) + 1 +
                                  strlen(Display_name) + 1 +
@@ -802,26 +787,24 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             }
 
             size_t offset = 0;
-            message[offset++] = '\x02'; // Тип сообщения AUTH
+            message[offset++] = '\x02'; // Message type AUTH
 
-            // Добавляем Message ID
-            message[offset++] = (char)((messageID >> 8) & 0xFF);
-            message[offset++] = (char)(messageID & 0xFF);
+            message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
+            message[offset++] = (char)(networkOrderMessageID & 0xFF);
 
-            // Копируем username
+
             strcpy(message + offset, username);
-            offset += strlen(username) + 1; // +1 для '\0'
+            offset += strlen(username) + 1;
 
-            // Копируем displayName
+
             strcpy(message + offset, Display_name);
-            offset += strlen(Display_name) + 1; // +1 для '\0'
+            offset += strlen(Display_name) + 1;
 
-            // Копируем secret
+
             strcpy(message + offset, secret);
-            offset += strlen(secret) + 1; // +1 для '\0'
+            offset += strlen(secret) + 1;
 
-            print_hex(message, totalLength);
-            printf("Message length: %d\n", totalLength);
+
             if (Check_username(username) != false && Check_secret(secret) != false &&
                 Check_Displayname(Display_name) != false && argsFilled == 3) {
 
@@ -850,18 +833,38 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
 
             if(buffer[0] == 0x01){
                 uint16_t receivedMessageID = (buffer[1] << 8) | buffer[2];
-                printf("Received ID(CONFIRM_AUTH): %d\n", receivedMessageID);
                 size_t totalLength = 1 + // Message type
                                      2;   // Message ID
                 char* message = (char*)malloc(totalLength);
                 size_t offset = 0;
                 message[offset++] = '\x00'; // Confrim message type
 
-                message[offset++] = (char)((messageID >> 8) & 0xFF);
-                message[offset++] = (char)(messageID & 0xFF);
+                message[offset++] = (char)((receivedMessageID >> 8) & 0xFF);
+                message[offset++] = (char)(receivedMessageID & 0xFF);
+                char* content_buffer = (char*)malloc(BUFFER_SIZE);
+                if(!content_buffer){
+                    perror("Failed to allocate memory for content buffer");
+                    return ERROR_STATE;
+                }
+                if(buffer[3] == 0x01) // If result is OK
+                {
+                    int j = 0;
+                    for (int i = 6; buffer[i] != '\0'; i++, j++) {
+                        content_buffer[j] += buffer[i];
+                    }
+                    printf("Success: %s\n", content_buffer);
 
-                print_hex(message, totalLength);
-                printf("Message length: %d\n", totalLength);
+
+                }else{
+                    int j = 0;
+                    for (int i = 6; buffer[i] != '\0'; i++, j++) {
+                        content_buffer[j] += buffer[i];
+                    }
+                    printf("Failure: %s\n", content_buffer);
+
+                }
+                free(content_buffer);
+
                 int send_confirm = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
                 if (send_confirm == -1) {
                     perror("Failed to send message");
@@ -871,35 +874,26 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 free(message);
                 if(buffer[3] == 0x01) // If result is OK
                 {
-                    printf("Authenticated with the server aaa.\n");
+
                     return OPEN_STATE;
                 }
                 wait_reply = 0;
 
-            }else if(buffer[0] == 0xFE){
-                char *messageContent = "";
+            }else if(buffer[0] == 0xFE)
+            {
+                printf("Error from Server\n");
                 uint16_t receivedMessageID = (buffer[1] << 8) | buffer[2];
-                printf("Received ID(ERROR_AUTH): %d\n", receivedMessageID);
                 size_t totalLength = 1 + // Message type
-                                     2 +  // Message ID
-                                     strlen(Display_name) + 1 + // Длина displayName + '\0'
-                                     strlen(messageContent) + 1;
+                                     2;   // Message ID
                 char* message = (char*)malloc(totalLength);
-
                 size_t offset = 0;
-                message[offset++] = '\xFE'; // Confrim message type
-                message[offset++] = (char)((messageID >> 8) & 0xFF);
-                message[offset++] = (char)(messageID & 0xFF);
+                message[offset++] = '\x00'; // Confrim message type
 
-                strcpy(message + offset, Display_name);
-                offset += strlen(Display_name) + 1; // +1 для '\0'
+                message[offset++] = (char)((receivedMessageID >> 8) & 0xFF);
+                message[offset++] = (char)(receivedMessageID & 0xFF);
 
-                strcpy(message + offset, messageContent);
-                offset += strlen(messageContent) + 1; // +1 для '\0'
-                print_hex(message, totalLength);
-                printf("Message length: %d\n", totalLength);
-                int send_confirm_bye = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
-                if (send_confirm_bye == -1) {
+                int send_confirm_err = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
+                if (send_confirm_err == -1) {
                     perror("Failed to send message");
                     free(message);
                     return ERROR_STATE;
@@ -911,27 +905,16 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                     perror("Failed to receive message");
                     return ERROR_STATE;
                 }
-                char *messageContent2 = "";
                 receivedMessageID = (buffer[1] << 8) | buffer[2];
-                printf("Received ID(BYE): %d\n", receivedMessageID);
                 size_t totalLength2 = 1 + // Message type
-                                      2 +  // Message ID
-                                      strlen(Display_name) + 1 + // Длина displayName + '\0'
-                                      strlen(messageContent2) + 1;
-                char* message2 = (char*)malloc(totalLength2);
-
+                                     2;   // Message ID
+                char* message2 = (char*)malloc(totalLength);
                 size_t offset2 = 0;
-                message[offset2++] = '\xFE'; // Confrim message type
-                message[offset2++] = (char)((messageID >> 8) & 0xFF);
-                message[offset2++] = (char)(messageID & 0xFF);
+                message[offset++] = '\x00'; // Confrim message type
 
-                strcpy(message2 + offset2, Display_name);
-                offset2 += strlen(Display_name) + 1; // +1 для '\0'
+                message2[offset2++] = (char)((receivedMessageID >> 8) & 0xFF);
+                message2[offset2++] = (char)(receivedMessageID & 0xFF);
 
-                strcpy(message2 + offset2, messageContent2);
-                offset2 += strlen(messageContent2) + 1; // +1 для '\0'
-                print_hex(message2, totalLength2);
-                printf("Message length: %d\n", totalLength2);
                 int send_confirm_bye2 = sendto(sock, message2, totalLength2, flags, (struct sockaddr*)server_addr, server_addr_len);
                 if (send_confirm_bye2 == -1) {
                     perror("Failed to send message");
@@ -946,17 +929,16 @@ int Auth_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
         }
 
     }
-    // return OPEN_STATE;
+
 }
 
 int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, int flags, uint8_t retry, uint16_t timeout) {
     char buffer[BUFFER_SIZE];
-    char buffer2[BUFFER_SIZE];
+    char buffer2[BUFFER_SIZE]; // Buffer for resending messages
     char line[BUFFER_SIZE];
     char channelID[MAX_CHANNEL_ID_LENGTH + 1];
 
     struct pollfd fds[2];
-
 
     fds[0].fd = STDIN_FILENO;
     fds[0].events = POLLIN;
@@ -964,15 +946,17 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
     fds[1].events = POLLIN;
 
     int recieving = 0;
-    int wait_for_confirm = 0;
+    int wait_confirm = 0;
     int Retries = 0;
     int reply_recieved = 0;
     size_t totalLength2;
-    int timeoutml = timeout;
+
 
     while(recieving == 0){
 
-        printf("Reply(OPEN) is %d\n", reply_recieved);
+        int pollTimeout = wait_confirm ? timeout : -1; // Set timeout to -1 if waiting for confirmation
+
+        // Check if the terminate signal was received
         pthread_mutex_lock(&terminateSignalMutex);
         if (errno == EINTR && terminateSignalReceived) {
             pthread_mutex_unlock(&terminateSignalMutex);
@@ -980,18 +964,17 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
         }
         pthread_mutex_unlock(&terminateSignalMutex);
 
-        int ret = poll(fds, 2, POLL_TIMEOUT); // wait for event
+        int ret = poll(fds, 2, pollTimeout); // wait for event
         if (ret < 0) {
             perror("poll");
             return ERROR_STATE;
         }
 
 
-
         if (fds[0].revents & POLLIN) {
             if (fgets(line, BUFFER_SIZE, stdin) == NULL) {
                 if (feof(stdin)) {
-                    printf("EOF detected. Exiting...\n");
+                    printf("EOF detected\n");
                     return END_STATE;
                 }
                 printf("Error or end-of-file encountered\n");
@@ -1007,8 +990,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                     if (strncmp(line, "/join ", 6) == 0) {
                         uint16_t networkOrderMessageID = htons(messageID);
                         int argsFilled = sscanf(line, "/join %s", channelID);
-                        printf("Channel ID: %s\n", channelID);
-                        size_t totalLength = 1 + // Тип сообщения
+                        size_t totalLength = 1 + // Message type
                                              2 + // Message ID
                                              strlen(channelID) + 1 +
                                              strlen(Display_name) + 1;
@@ -1020,21 +1002,20 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         }
 
                         size_t offset = 0;
-                        message[offset++] = '\x03'; // Тип сообщения AUTH
+                        message[offset++] = '\x03';
 
-                        // Добавляем Message ID
-                        message[offset++] = (char)((messageID >> 8) & 0xFF);
-                        message[offset++] = (char)(messageID & 0xFF);
 
-                        // copy channelID
+                        message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
+                        message[offset++] = (char)(networkOrderMessageID & 0xFF);
+
+
                         strcpy(message + offset, channelID);
-                        offset += strlen(channelID) + 1; // +1 для '\0'
+                        offset += strlen(channelID) + 1;
 
-                        // Копируем displayName
+
                         strcpy(message + offset, Display_name);
-                        offset += strlen(Display_name) + 1; // +1 для '\0'
-                        print_hex(message, totalLength);
-                        printf("Message length(JOIN): %d\n", totalLength);
+                        offset += strlen(Display_name) + 1;
+
 
                         memcpy(buffer2, message, totalLength);
                         totalLength2 = totalLength;
@@ -1048,7 +1029,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         free (message);
                         reply_recieved = 0;
                         messageID += 0x0001;
-                        wait_for_confirm = 1;
+                        wait_confirm = 1;
                     } else if (strncmp(line, "/rename ", 8) == 0) {
                         char newDisplayName[MAX_DISPLAY_NAME_LENGTH + 1];
                         sscanf(line, "/rename %20s", newDisplayName);
@@ -1072,7 +1053,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                     }
                     else { // sending message
                         uint16_t networkOrderMessageID = htons(messageID);
-                        size_t totalLength = 1 + // Тип сообщения
+                        size_t totalLength = 1 + // Message type
                                              2 + // Message ID
                                              strlen(channelID) + 1 +
                                              strlen(Display_name) + 1
@@ -1085,22 +1066,23 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                         }
 
                         size_t offset = 0;
-                        message[offset++] = '\x04'; // Тип сообщения AUTH
+                        message[offset++] = '\x04';
 
-                        // Добавляем Message ID
-                        message[offset++] = (char)((messageID >> 8) & 0xFF);
-                        message[offset++] = (char)(messageID & 0xFF);
 
-                        // Копируем displayName
+                        message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
+                        message[offset++] = (char)(networkOrderMessageID & 0xFF);
+
+
                         strcpy(message + offset, Display_name);
-                        offset += strlen(Display_name) + 1; // +1 для '\0
+                        offset += strlen(Display_name) + 1;
 
-                        // add message content
+
                         strcpy(message + offset, line);
-                        offset += strlen(line) + 1; // +1 для '\0'
-                        // '
-                        print_hex(message, totalLength);
-                        printf("Message length(MSG): %d\n", totalLength);
+                        offset += strlen(line) + 1;
+
+                        memcpy(buffer2, message, totalLength);
+                        totalLength2 = totalLength;
+
 
                         int send_msg = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
                         if (send_msg == -1) {
@@ -1108,8 +1090,9 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                             free (message);
                             return ERROR_STATE;
                         }
+                        printf("%s: %s\n", Display_name, line);
                         free (message);
-                        wait_for_confirm = true;
+                        wait_confirm = 1;
                         messageID += 0x0001;
 
 
@@ -1133,18 +1116,41 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             if(buffer[0] == 0x01) // reply
             {
                 uint16_t receivedMessageID = (buffer[1] << 8) | buffer[2];
-                printf("Received ID(OPEN_REPLY): %d\n", receivedMessageID);
+
                 size_t totalLength = 1 + // Message type
                                      2;   // Message ID
                 char* message = (char*)malloc(totalLength);
                 size_t offset = 0;
-                message[offset++] = '\x00'; // Confrim message type
+                message[offset++] = '\x00'; // Confirm message type
 
-                message[offset++] = (char)((messageID >> 8) & 0xFF);
-                message[offset++] = (char)(messageID & 0xFF);
+                message[offset++] = (char)((receivedMessageID >> 8) & 0xFF);
+                message[offset++] = (char)(receivedMessageID & 0xFF);
 
-                print_hex(message, totalLength);
-                printf("Message length(REPLY FROM SERVER): %d\n", totalLength);
+                char* content_buffer = (char*)malloc(BUFFER_SIZE);
+                if(!content_buffer){
+                    perror("Failed to allocate memory for content buffer");
+                    return ERROR_STATE;
+                }
+                if(buffer[3] == 0x01) // If result is OK
+                {
+                    int j = 0;
+                    for (int i = 6; buffer[i] != '\0'; i++, j++) {
+                        content_buffer[j] += buffer[i];
+                    }
+                    printf("Success: %s\n", content_buffer);
+
+
+                }else{
+                    int j = 0;
+                    for (int i = 6; buffer[i] != '\0'; i++, j++) {
+                        content_buffer[j] += buffer[i];
+                    }
+                    printf("Failure: %s\n", content_buffer);
+
+                }
+                free(content_buffer);
+
+
                 int send_confirm = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
                 if (send_confirm == -1) {
                     perror("Failed to send message");
@@ -1159,18 +1165,16 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             else if(buffer[0] == 0x04) // message
             {
                 uint16_t receivedMessageID = (buffer[1] << 8) | buffer[2];
-                printf("Received ID(OPEN_REPLY): %d\n", receivedMessageID);
                 size_t totalLength = 1 + // Message type
                                      2;   // Message ID
                 char* message = (char*)malloc(totalLength);
                 size_t offset = 0;
-                message[offset++] = '\x00'; // Confrim message type
+                message[offset++] = '\x00'; // Confirm message type
 
-                message[offset++] = (char)((messageID >> 8) & 0xFF);
-                message[offset++] = (char)(messageID & 0xFF);
+                message[offset++] = (char)((receivedMessageID >> 8) & 0xFF);
+                message[offset++] = (char)(receivedMessageID & 0xFF);
 
-                print_hex(message, totalLength);
-                printf("Message length(MSG FROM SERVER): %d\n", totalLength);
+
                 int send_confirm = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
                 if (send_confirm == -1) {
                     perror("Failed to send message");
@@ -1179,23 +1183,49 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                 }
                 free(message);
                 recieving = 0;
+                // Print the message from server
+                char* content_buffer = (char*)malloc(BUFFER_SIZE);
+                char* name =(char*)malloc(BUFFER_SIZE);
+                if(!content_buffer || !name){
+                    perror("Failed to allocate memory for content buffer");
+                    return ERROR_STATE;
+                }
+                if(buffer[0] == 0x04)
+                {
+                    int i, j;
+                    for (i = 3, j = 0; buffer[i] != '\0' && buffer[i] != ' '; i++, j++) {
+                        name[j] = buffer[i];
+                    }
+                    name[j] = '\0';
 
+                    i++;
+
+
+                    for (j = 0; buffer[i] != '\0'; i++, j++) {
+                        content_buffer[j] = buffer[i];
+                    }
+                    content_buffer[j] = '\0';
+
+                    printf("%s: %s\n", name, content_buffer);
+
+                }
+                free(name);
+                free(content_buffer);
 
             }else if(buffer[0] == 0xFE) // error
             {
+                printf("Error from Server\n");
                 uint16_t receivedMessageID = (buffer[1] << 8) | buffer[2];
-                printf("Received ID(OPEN_REPLY): %d\n", receivedMessageID);
                 size_t totalLength = 1 + // Message type
                                      2;   // Message ID
                 char* message = (char*)malloc(totalLength);
                 size_t offset = 0;
-                message[offset++] = '\x00'; // Confrim message type
+                message[offset++] = '\x00'; // Confirm message type
 
-                message[offset++] = (char)((messageID >> 8) & 0xFF);
-                message[offset++] = (char)(messageID & 0xFF);
+                message[offset++] = (char)((receivedMessageID >> 8) & 0xFF);
+                message[offset++] = (char)(receivedMessageID & 0xFF);
 
-                print_hex(message, totalLength);
-                printf("Message length(ERROR OPEN): %d\n", totalLength);
+
                 int send_confirm_error = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
                 if (send_confirm_error == -1) {
                     perror("Failed to send message");
@@ -1212,13 +1242,12 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
                                      2;   // Message ID
                 char* message = (char*)malloc(totalLength);
                 size_t offset = 0;
-                message[offset++] = '\x00'; // Confrim message type
+                message[offset++] = '\x00'; // Confirm message type
 
-                message[offset++] = (char)((messageID >> 8) & 0xFF);
-                message[offset++] = (char)(messageID & 0xFF);
+                message[offset++] = (char)((receivedMessageID >> 8) & 0xFF);
+                message[offset++] = (char)(receivedMessageID & 0xFF);
 
-                print_hex(message, totalLength);
-                printf("Message length(MSG FROM SERVER): %d\n", totalLength);
+
                 int send_confirm_bye = sendto(sock, message, totalLength, flags, (struct sockaddr*)server_addr, server_addr_len);
                 if (send_confirm_bye == -1) {
                     perror("Failed to send message");
@@ -1232,7 +1261,7 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
             }
             else if(buffer[0] == 0x00)
             {
-                wait_for_confirm = 0;
+                wait_confirm = 0;
             }
             else{
                 printf("Unknown message type\n");
@@ -1240,13 +1269,13 @@ int Open_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_
         }
 
     }
-      //return END_STATE;
+
 }
 
 int End_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_len, int flags, uint8_t retry, uint16_t timeout){
     uint16_t networkOrderMessageID = htons(messageID);
-    size_t totalLength = 1 + // Тип сообщения
-                         2; // Message ID
+    size_t totalLength = 1 +
+                         2;
 
 
     char* message = (char*)malloc(totalLength);
@@ -1256,17 +1285,16 @@ int End_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr_l
     }
 
     size_t offset = 0;
-    message[offset++] = '\xFF'; // Тип сообщения AUTH
+    message[offset++] = '\xFF'; // BYE type
 
-    // Добавляем Message ID
-    message[offset++] = (char)((messageID >> 8) & 0xFF);
-    message[offset++] = (char)(messageID & 0xFF);
 
-    // '
-    print_hex(message, totalLength);
-    printf("Message length(BYE MESSAGE): %d\n", totalLength);
+    message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
+    message[offset++] = (char)(networkOrderMessageID & 0xFF);
 
-    wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, flags, timeout, retry, messageID);
+
+
+
+    wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, flags, timeout, retry, networkOrderMessageID);
     free (message);
     close(sock);
     exit(0);
@@ -1276,7 +1304,7 @@ int Error_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
     char line[BUFFER_SIZE] = "Error";
 
     uint16_t networkOrderMessageID = htons(messageID);
-    size_t totalLength = 1 + // Тип сообщения
+    size_t totalLength = 1 + // Message type
                          2+ // Message ID
                          strlen(Display_name) + 1
                          + strlen(line) + 1;
@@ -1291,18 +1319,13 @@ int Error_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
     size_t offset = 0;
     message[offset++] = '\xFE';
 
-    // Добавляем Message ID
-    message[offset++] = (char)((messageID >> 8) & 0xFF);
-    message[offset++] = (char)(messageID & 0xFF);
+    message[offset++] = (char)((networkOrderMessageID >> 8) & 0xFF);
+    message[offset++] = (char)(networkOrderMessageID & 0xFF);
     strcpy(message + offset, Display_name);
-    offset += strlen(Display_name) + 1; // +1 для '\0
+    offset += strlen(Display_name) + 1;
     strcpy(message + offset, line);
-    offset += strlen(line) + 1; // +1 для '\0'
-
-    print_hex(message, totalLength);
-    printf("Message length(ERROR MESSAGE): %d\n", totalLength);
-
-    wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, flags, timeout, retry, messageID);
+    offset += strlen(line) + 1;
+    wait_confirm(sock, message, totalLength, (struct sockaddr*)server_addr, server_addr_len, flags, timeout, retry, networkOrderMessageID);
     free (message);
     messageID += 0x0001;
     return END_STATE;
@@ -1311,20 +1334,26 @@ int Error_state(int sock, struct sockaddr_in* server_addr, socklen_t server_addr
 
 
 
-void udp_client(char* server_ip, int server_port) {
+void udp_client() {
     int sock;
     struct sockaddr_in server_addr;
+    struct hostent *he;
 
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        perror("Socket creation failed");
+    if ((he = gethostbyname(config.server_ip)) == NULL) // get the host info
+    {
+        herror("gethostbyname");
+        exit(EXIT_FAILURE);
+    }
+
+    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+        perror("socket");
         exit(EXIT_FAILURE);
     }
 
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(config.server_port);
-    server_addr.sin_addr.s_addr = inet_addr(config.server_ip);
+    server_addr.sin_addr = *((struct in_addr *)he->h_addr);
 
 
     State state = START_STATE;
@@ -1336,31 +1365,30 @@ void udp_client(char* server_ip, int server_port) {
         switch (state) {
             case START_STATE: {
                 state = Start_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout );
-                printf("START state\n");
+
                 break;
             }
 
             case AUTH_STATE: {
-                printf("AUTH state\n");
+
                 state = Auth_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
                 break;
             }
 
             case OPEN_STATE: {
-                printf("OPEN state\n");
 
                 state = Open_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
                 break;
             }
 
             case ERROR_STATE: {
-                printf("ERROR state\n");
+
                 state = Error_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
                 break;
             }
 
             case END_STATE: {
-                printf("END state\n");
+
                 state = End_state(sock, &server_addr, sizeof(server_addr), flags, retry, timeout);
                 break;
             }
@@ -1369,9 +1397,8 @@ void udp_client(char* server_ip, int server_port) {
         }
 
     }
-
-
 }
+
 int main(int argc, char *argv[]){
     //
     parse_arguments(argc, argv);
@@ -1381,25 +1408,19 @@ int main(int argc, char *argv[]){
     if (config.server_port != DEFAULT_SERVER_PORT){
         fprintf(stderr, "Error: bad port\n");
         exit(EXIT_FAILURE);
-    }else{
-        printf("Chosen port: %d\n", config.server_port);
     }
     //
     if (config.server_ip == NULL || strcmp(config.server_ip, "") == 0) {
         fprintf(stderr, "Error: bad IP\n");
         exit(EXIT_FAILURE);
-    } else {
-        printf("Chosen IP: %s\n", config.server_ip);
     }
 
     // Check protocol
     if (strcmp(config.protocol, "tcp") == 0) {
-        printf("Chosen protocol: %s\n", config.protocol);
         tcp_client();
         //
     } else if (strcmp(config.protocol, "udp") == 0) {
-        printf("Chosen protocol: %s\n", config.protocol);
-        udp_client(config.server_ip, config.server_port);
+        udp_client();
         //
     } else {
         fprintf(stderr, "Error: bad protocol\n");
